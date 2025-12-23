@@ -1,0 +1,48 @@
+name: insurance_mobile
+description: Agricultural Insurance Mobile App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # Database
+  sqflite: any
+  path: any
+  
+  # Network
+  dio: any
+  connectivity_plus: any
+  
+  # Storage
+  flutter_secure_storage: any
+  shared_preferences: any
+  
+  # Location & Camera
+  geolocator: any
+  image_picker: any
+  path_provider: any
+  permission_handler: any
+  
+  # UI
+  google_fonts: any
+  
+  # Utils
+  intl: any
+  uuid: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: any
+
+flutter:
+  uses-material-design: true
