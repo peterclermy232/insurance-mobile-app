@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/network/api_client.dart';
+
 import 'claim_detail_screen.dart';
-import 'new_claim_screen.dart';
+import 'enhanced_new_claim_screen.dart';
+import '../models/claims_model.dart'; // ADDED: Import Claim model
 
 class ClaimsListScreen extends StatefulWidget {
   const ClaimsListScreen({Key? key}) : super(key: key);
@@ -281,11 +283,13 @@ class _ClaimsListScreenState extends State<ClaimsListScreen> {
                 ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
+                  // FIXED: Convert Map to Claim object and use ClaimDetailsScreen
+                  final claimObj = Claim.fromMap(claim);
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ClaimDetailScreen(
-                        claimId: claim['id'] as int,
+                      builder: (context) => ClaimDetailsScreen(
+                        claim: claimObj,
                       ),
                     ),
                   ).then((_) => _loadClaims());
@@ -300,7 +304,7 @@ class _ClaimsListScreenState extends State<ClaimsListScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const NewClaimScreen(),
+              builder: (context) => const EnhancedNewClaimScreen(),
             ),
           ).then((_) => _loadClaims());
         },

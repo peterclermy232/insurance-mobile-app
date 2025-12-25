@@ -3,16 +3,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ApiClient {
-  // Singleton
   static final ApiClient instance = ApiClient._init();
   late Dio _dio;
   final _storage = const FlutterSecureStorage();
 
-  /// ===== ANDROID EMULATOR BASE URL =====
-  /// For Android Emulator: Use 10.0.2.2 to access host machine's localhost
-  /// For iOS Simulator: Use 127.0.0.1 or localhost
-  /// For Physical Device: Use your Mac's IP address (e.g., 192.168.1.x)
-  static const String baseUrl = 'http://10.0.2.2:8001/api/v1';
+  static const String baseUrl = 'https://web-production-39ac0.up.railway.app/api/v1';
 
   ApiClient._init() {
     _dio = Dio(BaseOptions(
@@ -25,7 +20,6 @@ class ApiClient {
       },
     ));
 
-    // Interceptors for logging and attaching token
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await getToken();
@@ -87,6 +81,25 @@ class ApiClient {
     return await _storage.read(key: 'organisation_id');
   }
 
+  /// ===== ORGANISATIONS =====
+  Future<List<dynamic>> getOrganisations() async {
+    try {
+      final response = await _dio.get('/organisations/');
+
+      // Handle both array and paginated responses
+      if (response.data is List) {
+        return response.data;
+      } else if (response.data is Map && response.data['results'] != null) {
+        return response.data['results'];
+      } else {
+        return [];
+      }
+    } catch (e) {
+      print('❌ Failed to fetch organisations: $e');
+      throw Exception('Failed to fetch organisations: $e');
+    }
+  }
+
   /// ===== FARMERS =====
   Future<List<dynamic>> getFarmers() async {
     final response = await _dio.get('/farmers/');
@@ -140,4 +153,43 @@ class ApiClient {
       return false;
     }
   }
+  /// ===== GENERIC HTTP METHODS =====
+
+  Future<Map<String, dynamic>> post(
+      String path, {
+        Map<String, dynamic>? data,
+      }) async {
+    final response = await _dio.post(path, data: data);
+    return _normalizeResponse(response.data);
+  }
+
+  Future<Map<String, dynamic>> get(
+      String path, {
+        Map<String, dynamic>? queryParameters,
+      }) async {
+    final response = await _dio.get(path, queryParameters: queryParameters);
+    return _normalizeResponse(response.data);
+  }
+
+  Future<Map<String, dynamic>> patch(
+      String path, {
+        Map<String, dynamic>? data,
+      }) async {
+    final response = await _dio.patch(path, data: data);
+    return _normalizeResponse(response.data);
+  }
+
+  Future<void> delete(String path) async {
+    await _dio.delete(path);
+  }
+
+  /// Normalize API response (handles list or map)
+  Map<String, dynamic> _normalizeResponse(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    return {'results': data};
+  }
+
+
 }

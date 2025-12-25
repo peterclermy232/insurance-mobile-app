@@ -1,381 +1,535 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:intl/intl.dart';
-import '../../../core/database/app_database.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:io';
+import '../../../services/location_service.dart';
+import '../../../services/photo_service.dart';
+import '../models/claims_model.dart';
+import '../../../core/network/api_client.dart';
 
+class ClaimDetailsScreen extends StatefulWidget {
+  final Claim claim;
 
-class ClaimDetailScreen extends StatefulWidget {
-  final int claimId;
-
-  const ClaimDetailScreen({Key? key, required this.claimId}) : super(key: key);
+  const ClaimDetailsScreen({Key? key, required this.claim}) : super(key: key);
 
   @override
-  State<ClaimDetailScreen> createState() => _ClaimDetailScreenState();
+  _ClaimDetailsScreenState createState() => _ClaimDetailsScreenState();
 }
 
-class _ClaimDetailScreenState extends State<ClaimDetailScreen> {
-  Map<String, dynamic>? _claim;
-  Map<String, dynamic>? _farmer;
-  bool _isLoading = true;
+class _ClaimDetailsScreenState extends State<ClaimDetailsScreen> {
+  late final PhotoService _photoService;
+  final LocationService _locationService = LocationService();
+  final ImagePicker _picker = ImagePicker();
+  List<Map<String, dynamic>> _photos = [];
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadClaimDetails();
+    _photoService = PhotoService(ApiClient.instance);
+    _loadPhotos();
   }
 
-  Future<void> _loadClaimDetails() async {
-    setState(() => _isLoading = true);
-
+  Future<void> _loadPhotos() async {
     try {
-      final db = await AppDatabase.instance.database;
+      final photos = await _photoService.getClaimPhotos(widget.claim.id!);
+      setState(() => _photos = photos);
+    } catch (e) {
+      print('Error loading photos: $e');
+    }
+  }
 
-      final claims = await db.query(
-        'claims',
-        where: 'id = ?',
-        whereArgs: [widget.claimId],
+  Future<void> _takePhoto() async {
+    try {
+      setState(() => _loading = true);
+
+      // Take photo
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
       );
 
-      if (claims.isEmpty) {
-        throw Exception('Claim not found');
+      if (photo == null) {
+        setState(() => _loading = false);
+        return;
       }
 
-      final claim = claims.first;
+      // Get current location
+      final position = await _locationService.getCurrentPosition();
 
-      final farmers = await db.query(
-        'farmers',
-        where: 'id = ?',
-        whereArgs: [claim['farmer_id']],
+      // Upload photo
+      final result = await _photoService.uploadClaimPhoto(
+        File(photo.path),
+        widget.claim.id!,
+        caption: 'Loss evidence',
+        latitude: position.latitude,
+        longitude: position.longitude,
       );
 
-      setState(() {
-        _claim = claim;
-        _farmer = farmers.isNotEmpty ? farmers.first : null;
-        _isLoading = false;
-      });
+      // Reload photos
+      await _loadPhotos();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo uploaded successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to load claim: $e'),
+            content: Text('Error: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
+  Future<void> _deletePhoto(int index) async {
+    final photo = _photos[index];
+    final photoId = photo['id'] as int?;
+
+    if (photoId == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Photo'),
+        content: const Text('Are you sure you want to delete this photo?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final success = await _photoService.deletePhoto(photoId);
+        if (success) {
+          setState(() => _photos.removeAt(index));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo deleted'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete photo: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Claim ${widget.claim.claimNumber ?? "N/A"}'),
+        backgroundColor: Colors.green,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Claim details
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Claim Details',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const Divider(height: 24),
+                  _buildDetailRow(
+                    'Claim Number',
+                    widget.claim.claimNumber ?? 'Pending',
+                    Icons.receipt_long,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDetailRow(
+                    'Status',
+                    widget.claim.status,
+                    Icons.info_outline,
+                    statusColor: _getStatusColor(widget.claim.status),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDetailRow(
+                    'Estimated Loss',
+                    'KES ${widget.claim.estimatedLossAmount.toStringAsFixed(2)}',
+                    Icons.attach_money,
+                  ),
+                  if (widget.claim.assessorNotes.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      'Notes',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.claim.assessorNotes,
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                  if (widget.claim.latitude != null &&
+                      widget.claim.longitude != null) ...[
+                    const SizedBox(height: 16),
+                    _buildDetailRow(
+                      'Location',
+                      '${widget.claim.latitude!.toStringAsFixed(6)}, ${widget.claim.longitude!.toStringAsFixed(6)}',
+                      Icons.location_on,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Photos section
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Evidence Photos (${_photos.length})',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _loading ? null : _takePhoto,
+                        icon: const Icon(Icons.camera_alt),
+                        label: const Text('Take Photo'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  if (_loading)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else if (_photos.isEmpty)
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.photo_library_outlined,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No photos yet',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Tap "Take Photo" to add evidence',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                      ),
+                      itemCount: _photos.length,
+                      itemBuilder: (context, index) {
+                        final photo = _photos[index];
+                        return Stack(
+                          children: [
+                            InkWell(
+                              onTap: () => _viewPhoto(photo),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  photo['photo_url'] ?? '',
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[300],
+                                      child: const Icon(
+                                        Icons.broken_image,
+                                        color: Colors.grey,
+                                      ),
+                                    );
+                                  },
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Colors.grey[200],
+                                      child: const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  onPressed: () => _deletePhoto(index),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(
+      String label,
+      String value,
+      IconData icon, {
+        Color? statusColor,
+      }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: statusColor ?? Colors.green,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: statusColor ?? Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Color _getStatusColor(String status) {
-    switch (status) {
-      case 'synced':
-        return Colors.green;
-      case 'pending':
+    switch (status.toUpperCase()) {
+      case 'OPEN':
+      case 'PENDING':
         return Colors.orange;
-      case 'error':
+      case 'APPROVED':
+      case 'PAID':
+        return Colors.green;
+      case 'REJECTED':
+      case 'CLOSED':
         return Colors.red;
+      case 'PROCESSING':
+      case 'UNDER_REVIEW':
+        return Colors.blue;
       default:
         return Colors.grey;
     }
   }
 
-  String _formatDate(int timestamp) {
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    return DateFormat('MMM dd, yyyy HH:mm').format(date);
-  }
-
-  Widget _buildInfoCard(String title, String value, {IconData? icon}) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
+  void _viewPhoto(Map<String, dynamic> photo) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              Icon(icon, color: Colors.grey[600]),
-              const SizedBox(width: 12),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+            // Close button
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Claim Details')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_claim == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Claim Details')),
-        body: const Center(child: Text('Claim not found')),
-      );
-    }
-
-    final syncStatus = _claim!['sync_status'] ?? 'pending';
-    final photosPaths = _claim!['photos'] != null
-        ? List<String>.from(jsonDecode(_claim!['photos']))
-        : <String>[];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Claim Details'),
-        actions: [
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _getStatusColor(syncStatus),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              syncStatus.toUpperCase(),
-              style: const TextStyle(
+            // Image
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
                 color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
               ),
-            ),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Farmer Information
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Farmer Information',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Divider(),
-                  if (_farmer != null) ...[
-                    ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person),
-                      ),
-                      title: Text(
-                        '${_farmer!['first_name']} ${_farmer!['last_name']}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  photo['photo_url'] ?? '',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      padding: const EdgeInsets.all(32),
+                      color: Colors.grey[300],
+                      child: const Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('ID: ${_farmer!['id_number']}'),
-                          Text('Phone: ${_farmer!['phone_number']}'),
+                          Icon(Icons.broken_image, size: 64, color: Colors.grey),
+                          SizedBox(height: 8),
+                          Text('Failed to load image'),
                         ],
                       ),
-                    ),
-                  ] else
-                    const Text('Farmer information not available'),
-                ],
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-
-          // Claim Information
-          const Text(
-            'Claim Information',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          if (_claim!['claim_number'] != null)
-            _buildInfoCard(
-              'Claim Number',
-              _claim!['claim_number'],
-              icon: Icons.confirmation_number,
-            ),
-
-          _buildInfoCard(
-            'Estimated Loss Amount',
-            'KES ${_claim!['estimated_loss_amount']}',
-            icon: Icons.attach_money,
-          ),
-
-          _buildInfoCard(
-            'Assessment Date',
-            _formatDate(_claim!['created_at']),
-            icon: Icons.calendar_today,
-          ),
-
-          const SizedBox(height: 16),
-
-          // Location Information
-          if (_claim!['latitude'] != null && _claim!['longitude'] != null) ...[
-            const Text(
-              'Location',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Card(
-              child: Padding(
+            // Caption
+            if (photo['caption'] != null && photo['caption'].toString().isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
                 padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Latitude: ${_claim!['latitude']}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              Text(
-                                'Longitude: ${_claim!['longitude']}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    const Text(
+                      'Caption',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      photo['caption'].toString(),
+                      style: const TextStyle(fontSize: 14),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // Assessment Notes
-          const Text(
-            'Assessment Notes',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _claim!['assessor_notes'] ?? 'No notes provided',
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Photos
-          if (photosPaths.isNotEmpty) ...[
-            const Text(
-              'Photos',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-              ),
-              itemCount: photosPaths.length,
-              itemBuilder: (context, index) {
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PhotoViewScreen(
-                          photoPath: photosPaths[index],
-                        ),
-                      ),
-                    );
-                  },
-                  child: Hero(
-                    tag: photosPaths[index],
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        File(photosPaths[index]),
-                        fit: BoxFit.cover,
-                      ),
+            // Location info if available
+            if (photo['latitude'] != null && photo['longitude'] != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${photo['latitude']}, ${photo['longitude']}',
+                      style: const TextStyle(fontSize: 12),
                     ),
-                  ),
-                );
-              },
-            ),
+                  ],
+                ),
+              ),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class PhotoViewScreen extends StatelessWidget {
-  final String photoPath;
-
-  const PhotoViewScreen({Key? key, required this.photoPath}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Center(
-        child: Hero(
-          tag: photoPath,
-          child: InteractiveViewer(
-            child: Image.file(File(photoPath)),
-          ),
         ),
       ),
     );
