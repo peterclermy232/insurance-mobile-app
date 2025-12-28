@@ -62,8 +62,8 @@ class _FarmerListScreenState extends State<FarmerListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result.success
-                ? '✅ Synced ${result.farmersSynced} farmers'
-                : '❌ ${result.message}'),
+                ? ' Synced ${result.farmersSynced} farmers'
+                : ' ${result.message}'),
             backgroundColor: result.success ? Colors.green : Colors.orange,
           ),
         );

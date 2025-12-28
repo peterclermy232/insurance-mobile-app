@@ -69,12 +69,12 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
       if (_farmers.isEmpty) {
         _showSnack('No synced farmers found. Please sync first.', Colors.orange);
       } else {
-        print('✅ Loaded ${_farmers.length} farmers');
+        print('Loaded ${_farmers.length} farmers');
       }
     } catch (e) {
       setState(() => _isLoadingFarmers = false);
       _showSnack('Error loading farmers: $e', Colors.red);
-      print('❌ Error loading farmers: $e');
+      print('Error loading farmers: $e');
     }
   }
 
@@ -154,7 +154,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
                   quotationData,
                   conflictAlgorithm: ConflictAlgorithm.replace,
                 );
-                print('   ✅ Saved quotation ${quotationData['server_id']}');
+                print(' Saved quotation ${quotationData['server_id']}');
               } else {
                 await db.update(
                   'quotations',
@@ -162,20 +162,20 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
                   where: 'server_id = ?',
                   whereArgs: [quotationData['server_id']],
                 );
-                print('   ✅ Updated quotation ${quotationData['server_id']}');
+                print(' Updated quotation ${quotationData['server_id']}');
               }
             } catch (e) {
-              print('   ⚠️ Error saving quotation: $e');
+              print('Error saving quotation: $e');
             }
           }
 
-          print('✅ Fetched and saved ${serverQuotations.length} quotations from server');
+          print('Fetched and saved ${serverQuotations.length} quotations from server');
         } catch (e) {
-          print('⚠️ Could not fetch quotations from server: $e');
+          print('Could not fetch quotations from server: $e');
           // Continue to load from local DB
         }
       } else {
-        print('📴 Offline or farmer not synced - loading from local DB only');
+        print(' Offline or farmer not synced - loading from local DB only');
       }
 
       // Load from local database
@@ -186,7 +186,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
         orderBy: 'created_at DESC',
       );
 
-      print('📊 Found ${quotations.length} local quotations');
+      print('Found ${quotations.length} local quotations');
 
       for (var q in quotations) {
         print('   - Quotation ${q['server_id']}: ${q['status']} (Sum: ${q['sum_insured']})');
@@ -199,7 +199,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
         // Auto-select first quotation if available
         if (quotations.isNotEmpty) {
           _selectedQuotationId = quotations.first['server_id'] as int?;
-          print('✅ Auto-selected quotation: $_selectedQuotationId');
+          print('Auto-selected quotation: $_selectedQuotationId');
         }
       });
 
@@ -208,7 +208,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
           'No WRITTEN or PAID policies found for this farmer',
           Colors.orange,
         );
-        print('⚠️ Farmer $farmerId has no active policies. They need to create a policy first.');
+        print('Farmer $farmerId has no active policies. They need to create a policy first.');
       } else {
         _showSnack(
           'Loaded ${_quotations.length} ${_quotations.length == 1 ? "policy" : "policies"}',
@@ -218,7 +218,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
     } catch (e) {
       setState(() => _isLoadingQuotations = false);
       _showSnack('Error loading quotations: $e', Colors.red);
-      print('❌ Error loading quotations: $e');
+      print('Error loading quotations: $e');
     }
   }
 
@@ -326,7 +326,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
         'longitude': _currentPosition?.longitude,
       };
 
-      // ✅ FIX: Send loss_details as JSON string
+      // FIX: Send loss_details as JSON string
       final claimData = {
         'farmer': farmerServerId,
         'quotation': quotServerId,
@@ -335,11 +335,11 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
         'status': 'OPEN',
       };
 
-      print('📤 Sending claim to API:');
-      print('   Farmer ID: $farmerServerId');
-      print('   Quotation ID: $quotServerId');
-      print('   Amount: ${claimData['estimated_loss_amount']}');
-      print('   Loss Details (JSON): ${claimData['loss_details']}');
+      print('Sending claim to API:');
+      print('Farmer ID: $farmerServerId');
+      print('Quotation ID: $quotServerId');
+      print('Amount: ${claimData['estimated_loss_amount']}');
+      print('Loss Details (JSON): ${claimData['loss_details']}');
 
       // Check online status
       if (!await ApiClient.instance.isOnline()) {
@@ -349,9 +349,9 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
       // Save to server first
       final response = await ApiClient.instance.createClaim(claimData);
 
-      print('✅ Claim created on server:');
-      print('   Claim ID: ${response['claim_id']}');
-      print('   Claim Number: ${response['claim_number']}');
+      print('Claim created on server:');
+      print('Claim ID: ${response['claim_id']}');
+      print('Claim Number: ${response['claim_number']}');
 
       // Upload photos if any
       if (_photos.isNotEmpty) {
@@ -376,20 +376,20 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
         'updated_at': DateTime.now().millisecondsSinceEpoch,
       });
 
-      print('✅ Claim saved locally with ID: $claimId');
+      print('Claim saved locally with ID: $claimId');
 
       if (mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Claim created: ${response['claim_number']}'),
+            content: Text('Claim created: ${response['claim_number']}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
-      print('❌ Error creating claim: $e');
+      print('Error creating claim: $e');
       String errorMessage = 'Failed to create claim';
 
       if (e.toString().contains('Farmer not synced')) {
@@ -399,7 +399,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
       } else if (e.toString().contains('500')) {
         errorMessage = 'Server error. Contact administrator.';
       } else if (e.toString().contains('400')) {
-        // ✅ Enhanced error message for debugging
+        // Enhanced error message for debugging
         errorMessage = 'Invalid data format. Check: $e';
         print('🔍 Full error details: $e');
       }
@@ -414,9 +414,9 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
     for (var photo in _photos) {
       try {
         await ApiClient.instance.uploadImage(photo.path, 'photo');
-        print('✅ Uploaded photo: ${photo.path}');
+        print('Uploaded photo: ${photo.path}');
       } catch (e) {
-        print('❌ Failed to upload photo: $e');
+        print('Failed to upload photo: $e');
       }
     }
   }
@@ -543,7 +543,7 @@ class _EnhancedNewClaimScreenState extends State<EnhancedNewClaimScreen> {
                   );
                 }).toList(),
                 onChanged: (value) {
-                  print('🔄 Farmer selected: $value');
+                  print('Farmer selected: $value');
                   setState(() {
                     _selectedFarmerId = value;
                     _selectedQuotationId = null;

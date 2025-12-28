@@ -82,7 +82,7 @@ class _FarmerFormScreenState extends State<FarmerFormScreen> {
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // ✅ FIX
+      isScrollControlled: true,
       builder: (_) => SafeArea(
         child: Wrap(
           children: [

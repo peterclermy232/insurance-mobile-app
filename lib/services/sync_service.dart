@@ -48,7 +48,7 @@ class SyncService {
         'pending_data': pendingData,
       });
 
-      print('✅ Sync response received');
+      print(' Sync response received');
 
       // 4. Process upload results
       final uploadResults = response['upload_results'] as Map<String, dynamic>?;
@@ -74,7 +74,7 @@ class SyncService {
           DateTime.now().toIso8601String();
       await _prefs.setString('last_sync_timestamp', syncTimestamp);
 
-      print('✅ Sync completed successfully');
+      print(' Sync completed successfully');
 
       return SyncResult(
         success: true,
@@ -83,7 +83,7 @@ class SyncService {
         conflicts: conflicts.length,
       );
     } catch (e) {
-      print('❌ Sync failed: $e');
+      print(' Sync failed: $e');
       return SyncResult(
         success: false,
         error: e.toString(),
@@ -144,7 +144,7 @@ class SyncService {
         where: 'sync_status = ?',
         whereArgs: ['pending'],
       );
-      print('✅ Marked $farmersCreated farmers as synced');
+      print(' Marked $farmersCreated farmers as synced');
     }
 
     // Mark farms as synced
@@ -157,7 +157,7 @@ class SyncService {
         where: 'sync_status = ? OR synced = ?',
         whereArgs: ['pending', 0],
       );
-      print('✅ Marked $farmsCreated farms as synced');
+      print(' Marked $farmsCreated farms as synced');
     }
 
     // Mark quotations as synced
@@ -170,7 +170,7 @@ class SyncService {
         where: 'sync_status = ? OR synced = ?',
         whereArgs: ['pending', 0],
       );
-      print('✅ Marked $quotsCreated quotations as synced');
+      print(' Marked $quotsCreated quotations as synced');
     }
 
     // Mark claims as synced
@@ -183,7 +183,7 @@ class SyncService {
         where: 'sync_status = ?',
         whereArgs: ['pending'],
       );
-      print('✅ Marked $claimsCreated claims as synced');
+      print(' Marked $claimsCreated claims as synced');
     }
   }
 
@@ -320,7 +320,7 @@ class SyncService {
       );
 
       if (pendingItems.isEmpty) {
-        print('✅ No pending $entityType to sync');
+        print(' No pending $entityType to sync');
         return SyncResult(success: true);
       }
 
@@ -340,10 +340,10 @@ class SyncService {
         );
       }
 
-      print('✅ Synced ${pendingItems.length} $entityType');
+      print(' Synced ${pendingItems.length} $entityType');
       return SyncResult(success: true, uploaded: pendingItems.length);
     } catch (e) {
-      print('❌ Failed to sync $entityType: $e');
+      print(' Failed to sync $entityType: $e');
       return SyncResult(success: false, error: e.toString());
     }
   }

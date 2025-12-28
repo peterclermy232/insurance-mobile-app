@@ -35,17 +35,17 @@ class AppDatabase {
       try {
         await db.execute('ALTER TABLE farmers ADD COLUMN registration_latitude REAL');
         await db.execute('ALTER TABLE farmers ADD COLUMN registration_longitude REAL');
-        print('✅ Added latitude & longitude columns to farmers table');
+        print('Added latitude & longitude columns to farmers table');
       } catch (e) {
-        print('⚠️ Latitude/Longitude columns might already exist: $e');
+        print('Latitude/Longitude columns might already exist: $e');
       }
 
       // Add date_of_birth to farmers
       try {
         await db.execute('ALTER TABLE farmers ADD COLUMN date_of_birth INTEGER');
-        print('✅ Added date_of_birth column to farmers table');
+        print('Added date_of_birth column to farmers table');
       } catch (e) {
-        print('⚠️ Column date_of_birth might already exist: $e');
+        print('Column date_of_birth might already exist: $e');
       }
 
       // Add columns to claims table
@@ -55,9 +55,9 @@ class AppDatabase {
         await db.execute('ALTER TABLE claims ADD COLUMN registration_latitude REAL');
         await db.execute('ALTER TABLE claims ADD COLUMN assessor_notes TEXT');
         await db.execute("ALTER TABLE claims ADD COLUMN status TEXT DEFAULT 'OPEN'");
-        print('✅ Updated claims table with new columns');
+        print('Updated claims table with new columns');
       } catch (e) {
-        print('⚠️ Some columns might already exist in claims: $e');
+        print('Some columns might already exist in claims: $e');
       }
     }
   }
@@ -90,7 +90,7 @@ class AppDatabase {
         updated_at INTEGER
       )
     ''');
-    print('✅ Created farmers table');
+    print('Created farmers table');
 
     // Claims table
     await db.execute('''
@@ -113,7 +113,7 @@ class AppDatabase {
         FOREIGN KEY (farmer_id) REFERENCES farmers(id)
       )
     ''');
-    print('✅ Created claims table');
+    print('Created claims table');
 
     // Farms table
     await db.execute('''
@@ -134,7 +134,7 @@ class AppDatabase {
         FOREIGN KEY (farmer_id) REFERENCES farmers(id)
       )
     ''');
-    print('✅ Created farms table');
+    print(' Created farms table');
 
     // Quotations table
     await db.execute('''
@@ -156,7 +156,7 @@ class AppDatabase {
         FOREIGN KEY (farm_id) REFERENCES farms(id)
       )
     ''');
-    print('✅ Created quotations table');
+    print('Created quotations table');
 
     // Sync queue table
     await db.execute('''
@@ -169,7 +169,7 @@ class AppDatabase {
         created_at INTEGER NOT NULL
       )
     ''');
-    print('✅ Created sync_queue table');
+    print('Created sync_queue table');
 
     // Media queue table
     await db.execute('''
@@ -182,9 +182,9 @@ class AppDatabase {
         created_at INTEGER NOT NULL
       )
     ''');
-    print('✅ Created media_queue table');
+    print('Created media_queue table');
 
-    print('✅ All tables created successfully!');
+    print('All tables created successfully!');
   }
 
   /// Close database

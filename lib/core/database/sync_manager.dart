@@ -11,7 +11,7 @@ class SyncManager {
 
   Future<SyncResult> syncAll() async {
     if (!await _apiClient.isOnline()) {
-      print('📵 No internet connection. Skipping sync.');
+      print('No internet connection. Skipping sync.');
       return SyncResult(
         success: false,
         message: 'No internet connection',
@@ -20,7 +20,7 @@ class SyncManager {
       );
     }
 
-    print('🔄 Starting sync...');
+    print('Starting sync...');
 
     int farmersSynced = 0;
     int claimsSynced = 0;
@@ -30,7 +30,7 @@ class SyncManager {
       claimsSynced = await _syncClaims();
       await _syncMedia();
 
-      print('✅ Sync complete! Farmers: $farmersSynced, Claims: $claimsSynced');
+      print('Sync complete! Farmers: $farmersSynced, Claims: $claimsSynced');
 
       return SyncResult(
         success: true,
@@ -39,7 +39,7 @@ class SyncManager {
         claimsSynced: claimsSynced,
       );
     } catch (e) {
-      print('❌ Sync failed: $e');
+      print('Sync failed: $e');
       return SyncResult(
         success: false,
         message: 'Sync failed: $e',
@@ -76,9 +76,9 @@ class SyncManager {
         );
 
         synced++;
-        print('✅ Synced farmer: ${farmer.firstName} ${farmer.lastName}');
+        print('Synced farmer: ${farmer.firstName} ${farmer.lastName}');
       } catch (e) {
-        print('❌ Failed to sync farmer ${farmerMap['id']}: $e');
+        print('Failed to sync farmer ${farmerMap['id']}: $e');
         await db.update(
           'farmers',
           {'sync_status': 'error'},
@@ -110,7 +110,7 @@ class SyncManager {
         );
 
         if (farmer.isEmpty || farmer.first['server_id'] == null) {
-          print('⚠️ Skipping claim - farmer not synced yet');
+          print('Skipping claim - farmer not synced yet');
           continue;
         }
 
@@ -137,9 +137,9 @@ class SyncManager {
         );
 
         synced++;
-        print('✅ Synced claim: ${response['claim_number']}');
+        print('Synced claim: ${response['claim_number']}');
       } catch (e) {
-        print('❌ Failed to sync claim ${claimMap['id']}: $e');
+        print('Failed to sync claim ${claimMap['id']}: $e');
       }
     }
 
@@ -167,9 +167,9 @@ class SyncManager {
           whereArgs: [media['id']],
         );
 
-        print('✅ Uploaded media: $url');
+        print('Uploaded media: $url');
       } catch (e) {
-        print('❌ Failed to upload media ${media['id']}: $e');
+        print('Failed to upload media ${media['id']}: $e');
       }
     }
   }

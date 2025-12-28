@@ -85,8 +85,8 @@ class _RoleBasedHomeScreenState extends State<RoleBasedHomeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result.success
-                ? '✅ Sync complete! ${result.farmersSynced} farmers, ${result.claimsSynced} claims'
-                : '❌ ${result.message}'),
+                ? ' Sync complete! ${result.farmersSynced} farmers, ${result.claimsSynced} claims'
+                : ' ${result.message}'),
             backgroundColor: result.success ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 3),
           ),

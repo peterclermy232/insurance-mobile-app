@@ -26,15 +26,15 @@ class ApiClient {
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
-        print('🌐 API Request: ${options.method} ${options.baseUrl}${options.path}');
+        print('API Request: ${options.method} ${options.baseUrl}${options.path}');
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print('✅ API Response: ${response.statusCode} ${response.requestOptions.path}');
+        print('API Response: ${response.statusCode} ${response.requestOptions.path}');
         return handler.next(response);
       },
       onError: (error, handler) {
-        print('❌ API Error: ${error.message}');
+        print('API Error: ${error.message}');
         return handler.next(error);
       },
     ));
@@ -95,7 +95,7 @@ class ApiClient {
         return [];
       }
     } catch (e) {
-      print('❌ Failed to fetch organisations: $e');
+      print('Failed to fetch organisations: $e');
       throw Exception('Failed to fetch organisations: $e');
     }
   }
@@ -146,10 +146,10 @@ class ApiClient {
   Future<bool> testConnection() async {
     try {
       final response = await _dio.get('/countries/');
-      print('✅ Connection successful! Status: ${response.statusCode}');
+      print('Connection successful! Status: ${response.statusCode}');
       return true;
     } catch (e) {
-      print('❌ Connection failed: $e');
+      print('Connection failed: $e');
       return false;
     }
   }
