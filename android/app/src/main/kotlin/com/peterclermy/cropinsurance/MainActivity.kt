@@ -1,4 +1,4 @@
-package com.example.insurance_mobile
+package com.peterclermy.cropinsurance
 
 import io.flutter.embedding.android.FlutterActivity
 

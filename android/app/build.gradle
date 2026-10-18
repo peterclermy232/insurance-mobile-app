@@ -4,9 +4,29 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Release signing. Locally the keystore is described by android/key.properties
+// (never committed); on Codemagic the CM_* variables come from the uploaded
+// keystore. Without either, release builds fall back to the debug key so
+// `flutter run --release` still works on a developer machine.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader("UTF-8") { keystoreProperties.load(it) }
+}
+def releaseStoreFile = System.getenv("CM_KEYSTORE_PATH") ?: keystoreProperties["storeFile"]
+
+// Version from pubspec.yaml / --build-number, which Flutter writes to local.properties.
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader("UTF-8") { localProperties.load(it) }
+}
+def flutterVersionCode = (localProperties.getProperty("flutter.versionCode") ?: "1").toInteger()
+def flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0.0"
+
 android {
-    namespace = "com.example.insurance_mobile"
-    compileSdk = 36  // Changed from 34 to 36
+    namespace = "com.peterclermy.cropinsurance"
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -18,16 +38,27 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.insurance_mobile"
-        minSdkVersion = flutter.minSdkVersion  // Changed from flutter.minSdkVersion to explicit 21
-        targetSdk = 36  // Changed from 34 to 36
-        versionCode = 1
-        versionName = "1.0"
+        applicationId = "com.peterclermy.cropinsurance"
+        minSdkVersion = flutter.minSdkVersion
+        targetSdk = 36
+        versionCode = flutterVersionCode
+        versionName = flutterVersionName
+    }
+
+    signingConfigs {
+        if (releaseStoreFile) {
+            release {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("CM_KEYSTORE_PASSWORD") ?: keystoreProperties["storePassword"]
+                keyAlias = System.getenv("CM_KEY_ALIAS") ?: keystoreProperties["keyAlias"]
+                keyPassword = System.getenv("CM_KEY_PASSWORD") ?: keystoreProperties["keyPassword"]
+            }
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = releaseStoreFile ? signingConfigs.release : signingConfigs.debug
         }
     }
 }

@@ -1,0 +1,43 @@
+# Codemagic CI: https://docs.codemagic.io/yaml-quick-start/building-a-flutter-app/
+#
+# Before the first build, upload the release keystore in Codemagic:
+# Team settings -> Code signing identities -> Android keystores,
+# reference name "cropinsurance_upload".
+workflows:
+  android-apk:
+    name: Android APK (testers)
+    max_build_duration: 45
+    instance_type: mac_mini_m2
+    environment:
+      flutter: 3.22.3
+      java: 17
+      android_signing:
+        - cropinsurance_upload
+      vars:
+        API_BASE_URL: https://crop-insurance-api-46ql.onrender.com/api/v1
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Analyze
+        script: flutter analyze
+      - name: Test
+        script: flutter test
+      - name: Build signed APK
+        script: |
+          flutter build apk --release \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=API_BASE_URL=$API_BASE_URL
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+    publishing:
+      email:
+        recipients:
+          - frontend@ardhi.go.ke
+        notify:
+          success: true
+          failure: true

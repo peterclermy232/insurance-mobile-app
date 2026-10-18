@@ -41,3 +41,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android release signing (keystore lives outside the repo; upload it to Codemagic)
+android/key.properties
+*.jks
+*.keystore
