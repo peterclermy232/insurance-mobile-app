@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Insurance Mobile</string>
+	<string>Crop Insurance Field</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -41,6 +41,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is recorded when you register farmers and farms, report claims and check in to inspections.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used to take farmer profile photos and photos of crop damage and inspections.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose existing photos to attach to farmer profiles, claims and inspections.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

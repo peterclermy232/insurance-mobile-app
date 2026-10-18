@@ -1,368 +1,398 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
 
-import '../models/farmer_model.dart';
-import '../models/organisation_model.dart';
-import '../../../core/database/app_database.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/location/location_service.dart';
+import '../../../core/media/media_repository.dart';
+import '../../../core/media/photo_service.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/common.dart';
+import '../../../core/widgets/form_helpers.dart';
+import '../../../core/widgets/gps_capture.dart';
+import '../data/farmer_repository.dart';
+import '../models/farmer.dart';
+import '../widgets/farmer_avatar.dart';
+import 'farmer_detail_screen.dart';
 
+/// Register a farmer (uuid == null) or edit one. Saved on the device first.
 class FarmerFormScreen extends StatefulWidget {
-  const FarmerFormScreen({Key? key}) : super(key: key);
+  const FarmerFormScreen({super.key, this.uuid});
+
+  final String? uuid;
 
   @override
   State<FarmerFormScreen> createState() => _FarmerFormScreenState();
 }
 
 class _FarmerFormScreenState extends State<FarmerFormScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _form = GlobalKey<FormState>();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
+  final _idNumber = TextEditingController();
+  final _phone = TextEditingController();
+  final _email = TextEditingController();
 
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _idNumberController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
+  static const _defaultCategories = ['Smallholder', 'Medium-scale', 'Large-scale', 'Cooperative member'];
+  List<String> _categories = _defaultCategories;
+  static const _genders = {'M': 'Male', 'F': 'Female', 'O': 'Other'};
 
-  List<Organisation> _organisations = [];
-  Organisation? _selectedOrganisation;
-  bool _isLoadingOrganisations = true;
+  String? _gender;
+  String? _category;
+  DateTime? _dob;
+  GeoFix? _gps;
+  CapturedPhoto? _newPhoto;
+  String? _existingPhotoPath;
+  String? _existingPhotoUrl;
+  List<NextOfKin> _kin = [];
+  List<BankAccount> _banks = [];
 
-  String? _selectedGender;
-  Position? _currentPosition;
-  File? _photoFile;
+  bool _loading = true;
+  bool _saving = false;
+  Farmer? _existing;
 
-  bool _isLoading = false;
-  bool _isGettingLocation = false;
+  bool get _isEdit => widget.uuid != null;
 
   @override
   void initState() {
     super.initState();
-    _loadOrganisations();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (_isEdit) {
+      final farmer = await context.read<FarmerRepository>().get(widget.uuid!);
+      if (farmer != null) {
+        _existing = farmer;
+        _firstName.text = farmer.firstName;
+        _lastName.text = farmer.lastName;
+        _idNumber.text = farmer.idNumber;
+        _phone.text = farmer.phoneNumber;
+        _email.text = farmer.email ?? '';
+        _gender = switch (farmer.gender?.toUpperCase()) {
+          'M' || 'MALE' => 'M',
+          'F' || 'FEMALE' => 'F',
+          'O' || 'OTHER' => 'O',
+          _ => null,
+        };
+        // Keep a category set at the office even if it isn't one of ours.
+        final category = farmer.category;
+        if (category != null && category.isNotEmpty && !_categories.contains(category)) {
+          _categories = [..._categories, category];
+        }
+        _category = category?.isEmpty ?? true ? null : category;
+        _dob = farmer.dateOfBirth == null ? null : DateTime.tryParse(farmer.dateOfBirth!);
+        if (farmer.latitude != null && farmer.longitude != null) {
+          _gps = GeoFix(latitude: farmer.latitude!, longitude: farmer.longitude!, accuracy: farmer.gpsAccuracy);
+        }
+        _kin = [...farmer.nextOfKin];
+        _banks = [...farmer.bankAccounts];
+        _existingPhotoPath = farmer.localPhotoPath;
+        _existingPhotoUrl = farmer.photoUrl;
+      }
+    }
+    if (mounted) setState(() => _loading = false);
   }
 
   @override
   void dispose() {
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _idNumberController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
+    for (final c in [_firstName, _lastName, _idNumber, _phone, _email]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  // ================= LOAD ORGANISATIONS =================
-  Future<void> _loadOrganisations() async {
-    setState(() => _isLoadingOrganisations = true);
-    try {
-      final data = await ApiClient.instance.getOrganisations();
-      _organisations = data
-          .map((e) => Organisation.fromJson(e))
-          .where((o) => o.status == 'ACTIVE')
-          .toList();
-
-      final userOrgId = await ApiClient.instance.getOrganisationId();
-      if (userOrgId != null) {
-        final id = int.tryParse(userOrgId);
-        if (id != null) {
-          _selectedOrganisation =
-              _organisations.firstWhere((o) => o.organisationId == id);
-        }
-      }
-    } catch (e) {
-      _showSnack('Failed to load organisations: $e', Colors.red);
-    } finally {
-      setState(() => _isLoadingOrganisations = false);
-    }
-  }
-
-  // ================= PHOTO =================
-  Future<void> _takePhoto() async {
-    final picker = ImagePicker();
-
-    showModalBottomSheet(
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
       context: context,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera),
-              title: const Text('Take Photo'),
-              onTap: () async {
-                Navigator.pop(context);
-                final file = await picker.pickImage(
-                  source: ImageSource.camera,
-                  maxWidth: 800,
-                  maxHeight: 800,
-                  imageQuality: 75,
-                );
-                if (file != null) {
-                  setState(() => _photoFile = File(file.path));
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () async {
-                Navigator.pop(context);
-                final file = await picker.pickImage(
-                  source: ImageSource.gallery,
-                  maxWidth: 800,
-                  maxHeight: 800,
-                  imageQuality: 75,
-                );
-                if (file != null) {
-                  setState(() => _photoFile = File(file.path));
-                }
-              },
-            ),
-          ],
-        ),
-      ),
+      initialDate: _dob ?? DateTime(now.year - 35),
+      firstDate: DateTime(now.year - 110),
+      lastDate: DateTime(now.year - 16, now.month, now.day),
+      helpText: 'Date of birth',
     );
+    if (picked != null) setState(() => _dob = picked);
   }
 
-  // ================= LOCATION =================
-  Future<void> _getCurrentLocation() async {
-    setState(() => _isGettingLocation = true);
+  Future<void> _takePhoto() async {
     try {
-      final enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) throw 'Location services disabled';
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.deniedForever) {
-        throw 'Location permission permanently denied';
-      }
-
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
-
-      setState(() => _currentPosition = pos);
-      _showSnack('Location captured', Colors.green);
+      final photo = await context.read<PhotoService>().capture(tagLocation: false);
+      if (photo != null) setState(() => _newPhoto = photo);
     } catch (e) {
-      _showSnack('Location error: $e', Colors.red);
-    } finally {
-      setState(() => _isGettingLocation = false);
+      if (mounted) showMessage(context, 'Could not take photo: $e', error: true);
     }
   }
 
-  // ================= SAVE FARMER =================
-  Future<void> _saveFarmer() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_selectedOrganisation == null) {
-      _showSnack('Please select an organisation', Colors.red);
+  Future<void> _editKin([int? index]) async {
+    final current = index == null ? null : _kin[index];
+    final values = await showFieldsDialog(context, title: index == null ? 'Add next of kin' : 'Edit next of kin', fields: [
+      DialogField('name', 'Full name', validator: Validators.required('Name'), initial: current?.name ?? ''),
+      DialogField('relationship', 'Relationship (e.g. Spouse)',
+          validator: Validators.required('Relationship'), initial: current?.relationship ?? ''),
+      DialogField('phone', 'Phone number',
+          validator: (v) => Validators.phone(v), keyboardType: TextInputType.phone, initial: current?.phoneNumber ?? ''),
+    ]);
+    if (values == null) return;
+    final kin = NextOfKin(name: values['name']!, relationship: values['relationship']!, phoneNumber: values['phone']!);
+    setState(() => index == null ? _kin.add(kin) : _kin[index] = kin);
+  }
+
+  Future<void> _editBank([int? index]) async {
+    final current = index == null ? null : _banks[index];
+    final values = await showFieldsDialog(context, title: index == null ? 'Add bank account' : 'Edit bank account', fields: [
+      DialogField('bank', 'Bank name', validator: Validators.required('Bank name'), initial: current?.bankName ?? ''),
+      DialogField('number', 'Account number',
+          validator: Validators.required('Account number'),
+          keyboardType: TextInputType.number,
+          initial: current?.accountNumber ?? ''),
+      DialogField('name', 'Account name', validator: Validators.required('Account name'), initial: current?.accountName ?? ''),
+    ]);
+    if (values == null) return;
+    final account =
+        BankAccount(bankName: values['bank']!, accountNumber: values['number']!, accountName: values['name']!);
+    setState(() => index == null ? _banks.add(account) : _banks[index] = account);
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) {
+      showMessage(context, 'Please correct the highlighted fields.', error: true);
       return;
     }
+    final repo = context.read<FarmerRepository>();
+    final media = context.read<MediaRepository>();
 
-    setState(() => _isLoading = true);
+    final clash = await repo.findByIdNumber(_idNumber.text, exceptUuid: widget.uuid);
+    if (!mounted) return;
+    if (clash != null) {
+      showMessage(context, 'ID ${_idNumber.text.trim()} is already registered on this device for ${clash.fullName}.',
+          error: true);
+      return;
+    }
+    if (_gps == null) {
+      final proceed = await confirm(context,
+          title: 'No GPS location',
+          message: 'The registration location has not been captured. Save without it?',
+          confirmLabel: 'Save anyway');
+      if (!proceed || !mounted) return;
+    }
 
+    setState(() => _saving = true);
+    final farmer = Farmer(
+      firstName: _firstName.text,
+      lastName: _lastName.text,
+      idNumber: _idNumber.text,
+      phoneNumber: _phone.text.replaceAll(RegExp(r'[\s-]'), ''),
+      email: _email.text,
+      gender: _gender,
+      dateOfBirth: _dob == null ? null : Fmt.isoDate(_dob!),
+      category: _category,
+      latitude: _gps?.latitude,
+      longitude: _gps?.longitude,
+      gpsAccuracy: _gps?.accuracy,
+      nextOfKin: _kin,
+      bankAccounts: _banks,
+    );
     try {
-      final db = await AppDatabase.instance.database;
-
-      final farmer = Farmer(
-        firstName: _firstNameController.text.trim(),
-        lastName: _lastNameController.text.trim(),
-        idNumber: _idNumberController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
-        email: _emailController.text.trim().isEmpty
-            ? null
-            : _emailController.text.trim(),
-        gender: _selectedGender,
-        registration_latitude: _currentPosition?.latitude,
-        registration_longitude: _currentPosition?.longitude,
-        photoPath: _photoFile?.path,
-        organisationId: _selectedOrganisation!.organisationId,
-        organisationName: _selectedOrganisation!.organisationName,
-        syncStatus: 'pending',
-      );
-
-      final id = await db.insert('farmers', farmer.toMap());
-
-      await db.insert('sync_queue', {
-        'entity_type': 'farmer',
-        'entity_id': id,
-        'operation': 'create',
-        'priority': 3,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
-      });
-
-      if (_photoFile != null) {
-        await db.insert('media_queue', {
-          'file_path': _photoFile!.path,
-          'entity_type': 'farmer',
-          'entity_id': id,
-          'sync_status': 'pending',
-          'created_at': DateTime.now().millisecondsSinceEpoch,
-        });
+      final String uuid;
+      if (_isEdit) {
+        uuid = widget.uuid!;
+        await repo.update(uuid, farmer);
+      } else {
+        uuid = await repo.create(farmer);
       }
-
-      if (mounted) {
-        Navigator.pop(context, true);
-        _showSnack('Farmer saved (sync pending)', Colors.green);
+      if (_newPhoto != null) await media.setProfilePhoto(uuid, _newPhoto!);
+      if (!mounted) return;
+      showMessage(context, _isEdit ? 'Changes saved. They will upload at the next sync.' : 'Farmer saved on this device.');
+      if (_isEdit) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context)
+            .pushReplacement(MaterialPageRoute(builder: (_) => FarmerDetailScreen(uuid: uuid)));
       }
     } catch (e) {
-      _showSnack('Save failed: $e', Colors.red);
-    } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _saving = false);
+        showMessage(context, 'Could not save: $e', error: true);
+      }
     }
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Register Farmer'),
-        backgroundColor: Colors.green,
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildPhotoSection(),
-                const SizedBox(height: 24),
-                _buildOrganisationSection(),
-                const SizedBox(height: 24),
-                _buildPersonalInfo(),
-                const SizedBox(height: 24),
-                _buildContactInfo(),
-                const SizedBox(height: 24),
-                _buildLocationSection(),
-                const SizedBox(height: 32),
-                _buildSaveButton(),
-              ],
-            ),
-          ),
+    if (_loading) return Scaffold(appBar: AppBar(), body: const LoadingView());
+    if (_isEdit && _existing != null && !_existing!.sync.canEditFromDevice) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Edit farmer')),
+        body: const EmptyState(
+          icon: Icons.lock_outline,
+          title: 'This farmer is managed by the office',
+          message: 'It was registered at the office, so changes must be made there.',
         ),
-      ),
-    );
-  }
+      );
+    }
+    final initials = '${_firstName.text.isNotEmpty ? _firstName.text[0] : ''}'
+            '${_lastName.text.isNotEmpty ? _lastName.text[0] : ''}'
+        .toUpperCase();
 
-  // ================= WIDGETS =================
-  Widget _buildPhotoSection() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min, // ✅ FIX
-        children: [
-          _photoFile != null
-              ? Image.file(_photoFile!, height: 200, fit: BoxFit.cover)
-              : Container(
-            height: 200,
-            color: Colors.grey[200],
-            child: const Icon(Icons.person, size: 80),
+    return Scaffold(
+      appBar: AppBar(title: Text(_isEdit ? 'Edit farmer' : 'Register farmer')),
+      body: Form(
+        key: _form,
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          Center(
+            child: Column(children: [
+              FarmerAvatar(
+                initials: initials.isEmpty ? '?' : initials,
+                localPath: _newPhoto?.path ?? _existingPhotoPath,
+                url: _existingPhotoUrl,
+                radius: 44,
+              ),
+              TextButton.icon(
+                onPressed: _takePhoto,
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: Text(_newPhoto == null && _existingPhotoPath == null && _existingPhotoUrl == null
+                    ? 'Take profile photo'
+                    : 'Retake photo'),
+              ),
+            ]),
           ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _takePhoto,
-            icon: const Icon(Icons.camera_alt),
-            label:
-            Text(_photoFile == null ? 'Take Photo' : 'Retake Photo'),
-          )
-        ],
-      ),
-    ),
-  );
-
-  Widget _buildLocationSection() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min, // ✅ FIX
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Location',
-              style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          _currentPosition == null
-              ? const Text('No location captured')
-              : Text(
-              '${_currentPosition!.latitude}, ${_currentPosition!.longitude}'),
+          SectionCard(title: 'Personal details', icon: Icons.badge_outlined, children: [
+            TextFormField(
+              controller: _firstName,
+              decoration: const InputDecoration(labelText: 'First name *'),
+              textCapitalization: TextCapitalization.words,
+              validator: Validators.required('First name'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _lastName,
+              decoration: const InputDecoration(labelText: 'Last name *'),
+              textCapitalization: TextCapitalization.words,
+              validator: Validators.required('Last name'),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _idNumber,
+              decoration: const InputDecoration(labelText: 'National ID number *'),
+              keyboardType: TextInputType.number,
+              validator: Validators.nationalId,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _gender,
+              decoration: const InputDecoration(labelText: 'Gender *'),
+              items: [for (final e in _genders.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+              onChanged: (v) => setState(() => _gender = v),
+              validator: (v) => v == null ? 'Select gender' : null,
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickDob,
+              borderRadius: BorderRadius.circular(10),
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Date of birth',
+                  suffixIcon: _dob == null
+                      ? const Icon(Icons.calendar_today_outlined)
+                      : IconButton(
+                          tooltip: 'Clear',
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() => _dob = null),
+                        ),
+                ),
+                child: Text(_dob == null ? 'Not set' : Fmt.date(_dob)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _category,
+              decoration: const InputDecoration(labelText: 'Farmer category (optional)'),
+              items: [
+                const DropdownMenuItem<String>(value: null, child: Text('Not specified')),
+                for (final c in _categories) DropdownMenuItem(value: c, child: Text(c)),
+              ],
+              onChanged: (v) => setState(() => _category = v),
+            ),
+          ]),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: _isGettingLocation ? null : _getCurrentLocation,
-            icon: const Icon(Icons.my_location),
-            label: const Text('Capture Location'),
+          SectionCard(title: 'Contact', icon: Icons.phone_outlined, children: [
+            TextFormField(
+              controller: _phone,
+              decoration: const InputDecoration(labelText: 'Phone number *', hintText: '0712345678'),
+              keyboardType: TextInputType.phone,
+              validator: (v) => Validators.phone(v),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _email,
+              decoration: const InputDecoration(labelText: 'Email (optional)'),
+              keyboardType: TextInputType.emailAddress,
+              validator: Validators.email,
+            ),
+          ]),
+          const SizedBox(height: 12),
+          SectionCard(title: 'Registration location', icon: Icons.place_outlined, children: [
+            GpsCapture(
+              label: 'GPS position',
+              initial: _gps,
+              autoCapture: !_isEdit,
+              onChanged: (fix) => setState(() => _gps = fix),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          SectionCard(
+            title: 'Next of kin',
+            icon: Icons.family_restroom,
+            trailing: TextButton.icon(onPressed: _editKin, icon: const Icon(Icons.add), label: const Text('Add')),
+            children: [
+              if (_kin.isEmpty) const Text('None added'),
+              for (var i = 0; i < _kin.length; i++)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_kin[i].name),
+                  subtitle: Text('${_kin[i].relationship}  |  ${_kin[i].phoneNumber}'),
+                  onTap: () => _editKin(i),
+                  trailing: IconButton(
+                    tooltip: 'Remove',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => setState(() => _kin.removeAt(i)),
+                  ),
+                ),
+            ],
           ),
-        ],
+          const SizedBox(height: 12),
+          SectionCard(
+            title: 'Bank accounts',
+            icon: Icons.account_balance_outlined,
+            trailing: TextButton.icon(onPressed: _editBank, icon: const Icon(Icons.add), label: const Text('Add')),
+            children: [
+              if (_banks.isEmpty) const Text('None added'),
+              for (var i = 0; i < _banks.length; i++)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_banks[i].bankName),
+                  subtitle: Text('${_banks[i].accountNumber}  |  ${_banks[i].accountName}'),
+                  onTap: () => _editBank(i),
+                  trailing: IconButton(
+                    tooltip: 'Remove',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => setState(() => _banks.removeAt(i)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            icon: _saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.save_outlined),
+            label: Text(_isEdit ? 'Save changes' : 'Save farmer'),
+          ),
+          const SizedBox(height: 24),
+        ]),
       ),
-    ),
-  );
-
-  Widget _buildOrganisationSection() => _isLoadingOrganisations
-      ? const Center(child: CircularProgressIndicator())
-      : DropdownButtonFormField<Organisation>(
-    value: _selectedOrganisation,
-    decoration:
-    const InputDecoration(labelText: 'Organisation *'),
-    items: _organisations
-        .map(
-          (o) => DropdownMenuItem(
-        value: o,
-        child: Text(o.organisationName),
-      ),
-    )
-        .toList(),
-    onChanged: (v) => setState(() => _selectedOrganisation = v),
-    validator: (v) => v == null ? 'Required' : null,
-  );
-
-  Widget _buildPersonalInfo() => Column(children: [
-    TextFormField(
-      controller: _firstNameController,
-      decoration: const InputDecoration(labelText: 'First Name *'),
-      validator: (v) => v!.isEmpty ? 'Required' : null,
-    ),
-    const SizedBox(height: 12),
-    TextFormField(
-      controller: _lastNameController,
-      decoration: const InputDecoration(labelText: 'Last Name *'),
-      validator: (v) => v!.isEmpty ? 'Required' : null,
-    ),
-  ]);
-
-  Widget _buildContactInfo() => Column(children: [
-    TextFormField(
-      controller: _idNumberController,
-      decoration: const InputDecoration(labelText: 'ID Number *'),
-      validator: (v) => v!.isEmpty ? 'Required' : null,
-    ),
-    const SizedBox(height: 12),
-    TextFormField(
-      controller: _phoneController,
-      decoration: const InputDecoration(labelText: 'Phone Number *'),
-      validator: (v) => v!.isEmpty ? 'Required' : null,
-    ),
-    const SizedBox(height: 12),
-    TextFormField(
-      controller: _emailController,
-      decoration:
-      const InputDecoration(labelText: 'Email (optional)'),
-    ),
-  ]);
-
-  Widget _buildSaveButton() => ElevatedButton(
-    onPressed: _saveFarmer,
-    child: const Text('SAVE FARMER'),
-  );
-
-  void _showSnack(String msg, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: color),
     );
   }
 }
