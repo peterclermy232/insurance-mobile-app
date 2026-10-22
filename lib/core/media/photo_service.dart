@@ -8,6 +8,12 @@ import '../db/app_database.dart';
 import '../location/location_service.dart';
 import 'media_repository.dart';
 
+/// Photos are stored in the server's database, which has little space, so they
+/// are shrunk on the phone: 1280 px at quality 60 comes to roughly 150-300 KB
+/// while crop damage stays clear enough to assess.
+const photoMaxSide = 1280.0;
+const photoJpegQuality = 60;
+
 /// Takes photos and keeps a copy in app storage until they're uploaded.
 class PhotoService {
   PhotoService({ImagePicker? picker, this.location = const LocationService()})
@@ -20,9 +26,9 @@ class PhotoService {
   Future<CapturedPhoto?> capture({bool fromGallery = false, bool tagLocation = true}) async {
     final picked = await _picker.pickImage(
       source: fromGallery ? ImageSource.gallery : ImageSource.camera,
-      imageQuality: 75,
-      maxWidth: 1920,
-      maxHeight: 1920,
+      imageQuality: photoJpegQuality,
+      maxWidth: photoMaxSide,
+      maxHeight: photoMaxSide,
     );
     if (picked == null) return null;
 
