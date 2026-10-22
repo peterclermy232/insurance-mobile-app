@@ -80,4 +80,32 @@ void main() {
     expect(await MetaStore.get(db, MetaKeys.forceFullDownload), '1');
     await db.close();
   });
+
+  test('upgrade from v11 keeps quotations, adds area yield columns and forces a full download', () async {
+    final dir = await Directory.systemTemp.createTemp('db');
+    final path = '${dir.path}/v11.db';
+    final old = await databaseFactoryFfi.openDatabase(path,
+        options: OpenDatabaseOptions(
+          version: 11,
+          onCreate: (db, _) async {
+            await AppDatabase.createSchema(db);
+            for (final column in ['calculation_method', 'basis_risk_notice']) {
+              await db.execute('ALTER TABLE ${Tables.quotations} DROP COLUMN $column');
+            }
+          },
+        ));
+    await old.insert(Tables.quotations, {
+      'client_uuid': 'q1', 'created_at': 'x', 'updated_at': 'x', 'product_name': 'Maize', 'sync_status': 'synced',
+    });
+    await old.close();
+
+    final db = await AppDatabase.open(factory: databaseFactoryFfi, path: path);
+    final quotation = (await db.query(Tables.quotations)).single;
+    expect(quotation['product_name'], 'Maize');
+    expect(quotation.containsKey('calculation_method'), isTrue);
+    expect(quotation.containsKey('basis_risk_notice'), isTrue);
+    expect(await MetaStore.get(db, MetaKeys.forceFullDownload), '1');
+    expect(await db.getVersion(), AppDatabase.version);
+    await db.close();
+  });
 }

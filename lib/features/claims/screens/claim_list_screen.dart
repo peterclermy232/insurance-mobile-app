@@ -69,7 +69,7 @@ class _ClaimListScreenState extends State<ClaimListScreen> {
                   return Card(
                     child: ListTile(
                       title: Text('Claim ${c.numberLabel}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text('${c.farmerName ?? ''}  |  ${c.cause}\n'
+                      subtitle: Text('${c.farmerName ?? ''}  |  ${c.isAreaYield ? 'Area yield' : c.cause}\n'
                           '${Fmt.money(c.estimatedLoss)}  |  ${c.statusLabel}'),
                       isThreeLine: true,
                       trailing: SyncBadge(c.sync, compact: true),

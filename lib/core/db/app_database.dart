@@ -52,7 +52,7 @@ class AppDatabase {
   static const fileName = 'insurance_app.db';
 
   /// v1/v2 were the pre-release schema (broken on fresh installs).
-  static const version = 11;
+  static const version = 12;
 
   static Future<Database> open({DatabaseFactory? factory, String? path}) async {
     final dbFactory = factory ?? databaseFactory;
@@ -141,7 +141,9 @@ class AppDatabase {
         estimated_premium REAL,
         policy_number TEXT,
         status TEXT,
-        quotation_date TEXT
+        quotation_date TEXT,
+        calculation_method TEXT,
+        basis_risk_notice TEXT
       )
     ''');
     await db.execute('''
@@ -252,6 +254,19 @@ class AppDatabase {
       await db.insert(Tables.meta, {'key': MetaKeys.idFormat, 'value': 'numeric'},
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
+    if (oldVersion < 12) {
+      // Area yield index cover: how a policy pays out, and the basis risk notice for the farmer
+      await _addColumn(db, Tables.quotations, 'calculation_method', 'TEXT');
+      await _addColumn(db, Tables.quotations, 'basis_risk_notice', 'TEXT');
+      // Downloaded quotations only get the new fields on a full download
+      await db.insert(Tables.meta, {'key': MetaKeys.forceFullDownload, 'value': '1'},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
+  static Future<void> _addColumn(Database db, String table, String column, String type) async {
+    final columns = (await db.rawQuery('PRAGMA table_info($table)')).map((c) => c['name']).toSet();
+    if (!columns.contains(column)) await db.execute('ALTER TABLE $table ADD COLUMN $column $type');
   }
 
   static Future<void> _upgradeFromPreRelease(Database db) async {

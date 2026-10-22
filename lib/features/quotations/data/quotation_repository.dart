@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/db/syncable.dart';
+import '../../../core/utils/formatters.dart';
 import '../models/quotation.dart';
 
 class QuotationRepository extends SyncableRepository {
@@ -37,21 +38,40 @@ class QuotationRepository extends SyncableRepository {
     }
     final rows = await db.rawQuery(
         '$_select ${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}'} ORDER BY q.updated_at DESC', args);
-    return rows.map(Quotation.fromRow).toList();
+    return _withMethods(rows);
   }
 
   Future<Quotation?> get(String uuid) async {
     final rows = await db.rawQuery('$_select WHERE q.client_uuid = ?', [uuid]);
-    return rows.isEmpty ? null : Quotation.fromRow(rows.first);
+    return rows.isEmpty ? null : (await _withMethods(rows)).single;
+  }
+
+  /// Rows downloaded before the server sent `calculation_method` (or captured
+  /// on an older app version) take it from their product's reference data.
+  Future<List<Quotation>> _withMethods(List<Map<String, Object?>> rows) async {
+    if (rows.every((r) => r['calculation_method'] != null)) return rows.map(Quotation.fromRow).toList();
+    final products = {for (final p in await _products()) p.id: p};
+    return rows.map((r) {
+      if (r['calculation_method'] != null) return Quotation.fromRow(r);
+      final product = products[toServerId(r['insurance_product_id'])];
+      return Quotation.fromRow({
+        ...r,
+        'calculation_method': product?.calculationMethod,
+        'basis_risk_notice': r['basis_risk_notice'] ?? (product?.isAreaYield == true ? product!.basisRiskNotice : null),
+      });
+    }).toList();
+  }
+
+  Future<List<InsuranceProduct>> _products() async {
+    final rows = await db.query(Tables.reference, where: 'kind = ?', whereArgs: ['insurance_products']);
+    return rows
+        .map((r) => InsuranceProduct.fromJson(jsonDecode(r['data'] as String) as Map<String, dynamic>))
+        .toList();
   }
 
   /// ACTIVE products from the downloaded reference data.
   Future<List<InsuranceProduct>> activeProducts() async {
-    final rows = await db.query(Tables.reference, where: 'kind = ?', whereArgs: ['insurance_products']);
-    final products = rows
-        .map((r) => InsuranceProduct.fromJson(jsonDecode(r['data'] as String) as Map<String, dynamic>))
-        .where((p) => p.isActive)
-        .toList()
+    final products = (await _products()).where((p) => p.isActive).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     return products;
   }
@@ -69,6 +89,8 @@ class QuotationRepository extends SyncableRepository {
         'product_name': product.name,
         'sum_insured': sumInsured,
         'estimated_premium': product.estimatePremium(sumInsured),
+        'calculation_method': product.calculationMethod,
+        'basis_risk_notice': product.isAreaYield ? product.basisRiskNotice : null,
       };
 
   Future<void> retryUpload(String uuid) => retry(Tables.quotations, uuid);

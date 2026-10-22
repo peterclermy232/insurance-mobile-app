@@ -41,6 +41,9 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
   bool _loading = true;
   bool _saving = false;
 
+  /// Written / paid area yield policies left out of the picker (paid automatically).
+  int _areaYieldPolicies = 0;
+
   bool get _isEdit => widget.uuid != null;
 
   @override
@@ -53,7 +56,9 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
     final quotations = context.read<QuotationRepository>();
     final claims = context.read<ClaimRepository>();
     final media = context.read<MediaRepository>();
-    _policies = await quotations.list(claimableOnly: true, farmerUuid: widget.farmerUuid);
+    final claimable = await quotations.list(claimableOnly: true, farmerUuid: widget.farmerUuid);
+    _policies = claimable.where((p) => !p.isAreaYield).toList();
+    _areaYieldPolicies = claimable.length - _policies.length;
     var policyUuid = widget.quotationUuid;
     if (_isEdit) {
       _existing = await claims.get(widget.uuid!);
@@ -184,11 +189,12 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
     if (_policies.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Report claim')),
-        body: const EmptyState(
+        body: EmptyState(
           icon: Icons.policy_outlined,
           title: 'No policies to claim on',
           message: 'Claims can only be reported on written or paid policies. '
-              'Sync to download the latest policies from the office.',
+              'Sync to download the latest policies from the office.'
+              '${_areaYieldPolicies > 0 ? '\n\n${CalculationMethod.noClaimNeeded}' : ''}',
         ),
       );
     }
@@ -213,6 +219,14 @@ class _ClaimFormScreenState extends State<ClaimFormScreen> {
               onChanged: _isEdit ? null : (p) => setState(() => _policy = p),
               validator: (v) => v == null ? 'Choose a policy' : null,
             ),
+            if (_areaYieldPolicies > 0 && !_isEdit) ...[
+              const SizedBox(height: 8),
+              Text(
+                '$_areaYieldPolicies area yield ${_areaYieldPolicies == 1 ? 'policy is' : 'policies are'} not listed. '
+                '${CalculationMethod.noClaimNeeded}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (policy != null) ...[
               const SizedBox(height: 8),
               InfoRow('Product', policy.productName),

@@ -52,6 +52,10 @@ class ClaimDetailScreen extends StatelessWidget {
                   SyncBadge(claim.sync),
                   const SizedBox(width: 8),
                   StatusChip(claim.statusLabel),
+                  if (claim.isAreaYield) ...[
+                    const SizedBox(width: 8),
+                    const StatusChip('Area yield'),
+                  ],
                 ]),
                 const SizedBox(height: 12),
                 SyncStateBanner(claim.sync, onRetry: canEdit ? () => repo.retryUpload(uuid) : null),
@@ -61,25 +65,38 @@ class ClaimDetailScreen extends StatelessWidget {
                   InfoRow('Farmer', claim.farmerName),
                   InfoRow('Farm', claim.farmName),
                   InfoRow('Sum insured', Fmt.money(claim.sumInsured)),
-                  InfoRow('Estimated loss', Fmt.money(claim.estimatedLoss)),
+                  InfoRow(claim.isAreaYield ? 'Calculated payout' : 'Estimated loss', Fmt.money(claim.estimatedLoss)),
                   if (claim.approvedAmount != null) InfoRow('Approved amount', Fmt.money(claim.approvedAmount)),
                   InfoRow('Status', claim.statusLabel),
                   InfoRow('Assessor', claim.assessorName),
                   InfoRow('Reported', Fmt.date(claim.claimDate ?? claim.createdAt)),
                 ]),
                 const SizedBox(height: 12),
-                SectionCard(title: 'Loss details', icon: Icons.notes_outlined, children: [
-                  InfoRow('Cause', claim.cause),
-                  InfoRow('Date of loss', Fmt.date(Fmt.parse(claim.dateOfLoss))),
-                  InfoRow('Description', claim.description),
-                  InfoRow(
-                    'Location',
-                    claim.latitude == null
-                        ? null
-                        : '${Fmt.coord(claim.latitude)}, ${Fmt.coord(claim.longitude)}'
-                            '${claim.gpsAccuracy == null ? '' : ' (+/- ${claim.gpsAccuracy!.round()} m)'}',
-                  ),
-                ]),
+                if (claim.areaYield case final area?)
+                  SectionCard(title: 'Area yield payout', icon: Icons.grass_outlined, children: [
+                    InfoRow('Area', area.area),
+                    InfoRow('Guaranteed yield', area.yieldLabel(area.guaranteedYield)),
+                    InfoRow('Actual yield', area.yieldLabel(area.actualYield)),
+                    InfoRow('Payout', area.payoutPercentLabel),
+                    InfoRow('Payout amount', area.payout == null ? null : Fmt.money(area.payout)),
+                    const SizedBox(height: 4),
+                    Text('Created automatically from the approved average yield of the area; '
+                        "it does not depend on this farm's own harvest.",
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ])
+                else
+                  SectionCard(title: 'Loss details', icon: Icons.notes_outlined, children: [
+                    InfoRow('Cause', claim.cause),
+                    InfoRow('Date of loss', Fmt.date(Fmt.parse(claim.dateOfLoss))),
+                    InfoRow('Description', claim.description),
+                    InfoRow(
+                      'Location',
+                      claim.latitude == null
+                          ? null
+                          : '${Fmt.coord(claim.latitude)}, ${Fmt.coord(claim.longitude)}'
+                              '${claim.gpsAccuracy == null ? '' : ' (+/- ${claim.gpsAccuracy!.round()} m)'}',
+                    ),
+                  ]),
                 const SizedBox(height: 12),
                 SectionCard(title: 'Photos (${photos.length})', icon: Icons.photo_library_outlined, children: [
                   PhotoStrip(

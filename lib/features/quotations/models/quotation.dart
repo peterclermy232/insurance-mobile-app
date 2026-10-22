@@ -1,6 +1,37 @@
 import '../../../core/db/syncable.dart';
 import '../../../core/utils/formatters.dart';
 
+/// How a cover type works out what to pay (`calculation_method` from the server).
+class CalculationMethod {
+  CalculationMethod._();
+
+  static const individualFarm = 'INDIVIDUAL_FARM';
+
+  /// Paid from the average yield of the farm's ward / sub-county / county; the
+  /// server creates the claims itself, so they are never reported on the device.
+  static const areaYield = 'AREA_YIELD';
+  static const weatherIndex = 'WEATHER_INDEX';
+
+  /// "ward", "sub-county", "county" (same wording as the server's notice).
+  static String areaLabel(String? areaLevel) => switch (areaLevel) {
+        'WARD' => 'ward',
+        'SUB_COUNTY' => 'sub-county',
+        'COUNTY' => 'county',
+        _ => 'area',
+      };
+
+  /// Explanation of basis risk to read to the farmer before selling area yield cover.
+  static String basisRiskNotice(String? areaLevel) {
+    final area = areaLabel(areaLevel);
+    return 'Payouts are based on the average yield of the whole $area, not on your own farm. '
+        'You may get no payout after a poor harvest on your farm if the $area average is good, '
+        'and you may get a payout after a good harvest if the $area average is poor.';
+  }
+
+  static const noClaimNeeded =
+      "Area yield policies are paid automatically from the area's measured yield - no claim needed.";
+}
+
 class InsuranceProduct {
   const InsuranceProduct({
     required this.id,
@@ -12,6 +43,12 @@ class InsuranceProduct {
     this.categoryName,
     this.defaultSumInsured,
     this.status,
+    this.calculationMethod,
+    this.coverTypeName,
+    this.areaLevel,
+    this.coverageLevel,
+    this.yieldUnit,
+    this.maxPayoutPercent,
   });
 
   factory InsuranceProduct.fromJson(Map<String, dynamic> j) => InsuranceProduct(
@@ -24,6 +61,12 @@ class InsuranceProduct {
         categoryName: j['product_category_name'] as String?,
         defaultSumInsured: toDouble(j['sum_insured']),
         status: j['status'] as String?,
+        calculationMethod: j['calculation_method'] as String?,
+        coverTypeName: j['cover_type_name'] as String?,
+        areaLevel: j['area_level'] as String?,
+        coverageLevel: toDouble(j['coverage_level']),
+        yieldUnit: j['yield_unit'] as String?,
+        maxPayoutPercent: toDouble(j['max_payout_percent']),
       );
 
   final String id;
@@ -37,6 +80,40 @@ class InsuranceProduct {
   final String? categoryName;
   final double? defaultSumInsured;
   final String? status;
+
+  /// INDIVIDUAL_FARM / AREA_YIELD / WEATHER_INDEX (see [CalculationMethod]).
+  final String? calculationMethod;
+  final String? coverTypeName;
+
+  /// Area yield only: WARD / SUB_COUNTY / COUNTY the payout is measured over.
+  final String? areaLevel;
+
+  /// Area yield only: percent of the area's expected yield that is guaranteed.
+  final double? coverageLevel;
+  final String? yieldUnit;
+
+  /// Percent of the sum insured paid at most.
+  final double? maxPayoutPercent;
+
+  bool get isAreaYield => calculationMethod == CalculationMethod.areaYield;
+
+  String get areaLabel => CalculationMethod.areaLabel(areaLevel);
+
+  String get basisRiskNotice => CalculationMethod.basisRiskNotice(areaLevel);
+
+  /// e.g. "Covers 70% of the ward's expected yield (bags/acre). Pays at most 80% of the sum insured."
+  String? get coverageTerms {
+    final parts = <String>[
+      if (coverageLevel != null)
+        "Covers ${_percent(coverageLevel!)} of the $areaLabel's expected yield"
+            "${yieldUnit == null || yieldUnit!.isEmpty ? '' : ' ($yieldUnit)'}.",
+      if (maxPayoutPercent != null && maxPayoutPercent! < 100)
+        'Pays at most ${_percent(maxPayoutPercent!)} of the sum insured.',
+    ];
+    return parts.isEmpty ? null : parts.join(' ');
+  }
+
+  static String _percent(double v) => '${v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2)}%';
 
   bool get isActive => status == null || status == 'ACTIVE';
 
@@ -67,6 +144,8 @@ class Quotation {
     this.farmerName,
     this.farmerUuid,
     this.createdAt,
+    this.calculationMethod,
+    this.basisRiskNotice,
   });
 
   factory Quotation.fromRow(Map<String, Object?> r) => Quotation(
@@ -85,6 +164,8 @@ class Quotation {
         farmerName: r['farmer_name'] as String?,
         farmerUuid: r['farmer_uuid'] as String?,
         createdAt: DateTime.tryParse(r['created_at'] as String? ?? ''),
+        calculationMethod: r['calculation_method'] as String?,
+        basisRiskNotice: r['basis_risk_notice'] as String?,
       );
 
   final String? uuid;
@@ -105,8 +186,17 @@ class Quotation {
   final String? farmerUuid;
   final DateTime? createdAt;
 
-  /// Claims may only be reported on written or paid policies.
-  bool get isClaimable => sync.serverId != null && (status == 'WRITTEN' || status == 'PAID');
+  /// From the server, or from the product when the quotation was captured on
+  /// this device (see [CalculationMethod]).
+  final String? calculationMethod;
+  final String? basisRiskNotice;
+
+  /// Paid automatically from the area's yield; never claimed individually.
+  bool get isAreaYield => calculationMethod == CalculationMethod.areaYield;
+
+  /// Claims may only be reported on written or paid policies, and never on
+  /// area yield policies (the server creates those claims itself).
+  bool get isClaimable => sync.serverId != null && (status == 'WRITTEN' || status == 'PAID') && !isAreaYield;
 
   /// The office owns quotations once they leave OPEN/DRAFT.
   bool get isEditable =>

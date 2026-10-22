@@ -72,6 +72,14 @@ class QuotationDetailScreen extends StatelessWidget {
                   InfoRow('Status', q.statusLabel),
                   InfoRow('Date', Fmt.date(q.quotationDate ?? q.createdAt)),
                 ]),
+                if (q.isAreaYield) ...[
+                  const SizedBox(height: 12),
+                  SectionCard(title: 'Area yield cover', icon: Icons.grass_outlined, children: [
+                    if (q.basisRiskNotice != null) Text(q.basisRiskNotice!),
+                    const SizedBox(height: 8),
+                    const Text(CalculationMethod.noClaimNeeded),
+                  ]),
+                ],
                 if (q.isClaimable && (session?.canReportClaims ?? false)) ...[
                   const SizedBox(height: 16),
                   FilledButton.icon(

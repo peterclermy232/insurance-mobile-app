@@ -205,6 +205,8 @@ class EntityMappers {
           'policy_number': r['policy_number'],
           'status': r['status'],
           'quotation_date': r['quotation_date'],
+          'calculation_method': r['calculation_method'],
+          'basis_risk_notice': r['basis_risk_notice'],
         });
       case Tables.claims:
         final details = r['loss_details'];
